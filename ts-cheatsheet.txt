@@ -1,0 +1,236 @@
+=== DEFINITION ===
+
+--- union
+тип, являющийся объединением нескольких простых типов
+type Union = number | null | true | 'hello'
+
+--- literal
+тип, состоящий из одного конкретного значения
+type BooleanLiteral = true
+type StringLiteral = 'my const'
+'my const' является подмножеством string, но не наоборот
+[] является подмножеством any[], но не наоборот
+[] не является подмножеством [1, 2] и наоборот
+readonly [1] является подмножеством [1], но не наоборот
+
+--- tuple
+массив с заданным количеством и типом элементов
+type Tuple = [string, number | boolean, any]
+const tuple = ['hello', 1, null] as const
+
+=== SYNTAX ===
+
+--- обращение к свойствам
+- T['literalProperty']
+если T - структура объекта, то можно получить значение
+- T[0]
+если T - массив или tuple, то можно получить значение по индексу
+если T - строка, то вернет string, а не литерал буквы
+- T[number]
+если T - массив или tuple. то переберет все индексы и соберет результаты в union
+- T['length'] 
+если T - массив или tuple, то можно получить длину массива как числовой литерал
+если T - строка, то вернется number, а не длина строки
+
+--- keyword <extends>
+- extends в аргументах дженерика
+type Type<T extends U>
+T как единое множество является подмножествои U, иначе ошибка
+- extends в теле дженерика
+T1 extends T2 ? T3 : T4
+используется только в выражении с тернарным условным оператором
+T1 и T2 - часть условия, T3 и T4 - возвращаемый тип
+каждый из T1, T2, T3, T4 может быть более сложным выражением
+в T2 можно использовать infer
+алгоритм работы:
+1. разбивает T1 union на составляющие примитивы (distribution)
+2.1 в рамках итерации записывает в T1 текущий примитив
+2.2 проверяет является ли примитивный T1 подмножеством T2
+2.3 вычисляет T3 или T4 (T1 примитив)
+3. собирает все результаты в union
+
+--- keyword <infer>
+infer используется только в правой части условия extends
+для каждой итерации будет выполняться попытка парсинга левой части
+при успехе резолв в успех, иначе в провал
+- infer from array
+[infer First, any, ...infer T, any, infer Last]
+- infer exact type from array
+T extends [infer First extends string, ...any] ? First : never
+если First не string, то выполнится провал
+- infer from string
+`$prefix${infer AllMiddleString}suffix`
+`${infer FirstLetter}${infer SecondLetter}${infer RestString}`
+- infer from function
+(arg1: infer T1, ...args: infer T2) => infer T3
+- infer from utility aliases
+type I<T extends any[]> = T extends Array<R> ? R : never
+I<number[]> -> number
+-? infer from union
+S extends `${Whitespace}${infer U}`| `${infer U}${Whitespace}`
+
+--- keyword <in>
+- {
+ [K in T]: R<K, T>
+}
+берет существующий тип T (или вычисляет, например keyof T)
+перебирает все его примитивные union составляющие
+в рамках итерации ключ кладется в K
+для конкретного ключа вычисляется R<K>
+во время вычисления значения в T лежит "все", а в K "одно из"
+все пары собираются в одну структуру
+- {
+    [K in T as U<K, T>]: R<K, T>
+}
+берет существующий тип T (или вычисляет, например keyof T)
+перебирает все его примитивные union составляющие
+в рамках итерации ключ кладется в K
+для конкретного ключа вычисляется U<K> и кладется в ключ
+для конкретного ключа вычисляется R<K> и кладется в значение
+во время вычисления значения в T лежит "все", а в K "одно из"
+- все ключи должны быть readonly
+- если все ключи number - получится массив
+- если все ключи PropertyKey - получится объект
+- если ключ never - он не попадет в выходную структуру
+- если ключ другого типа - будет ошибка
+
+--- keyword <keyof>
+- keyof T
+возвращает новый тип, состоящий из union всех ключей T как literal'ов
+
+--- keyword <readonly>
+- readonly в аргументах дженерика
+type Type<T extends readonly any[]>
+readonly Type - более узкое множество, чем Type
+типы получаемые через "as const" - readonly
+чтобы дженерик поддерживал типы as const нужно указать readonly в аргументах
+- добавление readonly в теле дженерика
+{
+    readonly [K in keyof T]: T[K]
+}
+- исключение readonly в теле дженерика
+{
+    -readonly [K in keyof T]: T[K]
+}
+- если не указывать, то сохраняется родное
+
+--- keyword <?>
+- добавление ? в теле дженерика
+{
+    [K in keyof T]?: T[K]
+}
+- исключение ? в теле дженерика
+{
+    [K in keyof T]-?: T[K]
+}
+- если не указывать, то сохраняется родное
+
+--- переменные без infer и без in
+- для функции
+fn<V>(arg1: V) => V
+тайпскрипт проследит чтобы тип аргумента и тип возврата были одинаковыми
+
+--- значение по умолчанию
+type Type<T extends number = 0>
+
+=== HACKS ===
+
+--- получить error если в дженерик поданы плохие данные
+- можно добавить проверку в объявлении входных переменных
+type Type<T extends string> = ...
+- можно вернуть never при вычислении типа
+type Type<T> = T extends string ? T : never
+
+--- свернуть массив типов в union
+- T[number]
+переберет все числа
+выберет значения из T по индексу
+соберет результаты в union
+
+--- избежать перебора T1 при синтаксисе T1 extends T2
+- обернуть T1 в массив [T1], тогда получится новый тип, который не union
+при этом может потребоваться обернуть в массив правую часть выражения
+
+--- получить тип элементов массива
+T extends Array<infer R> ? R : never
+T extends (infer R)[] ? R : never
+R[0] если элемент точно существует
+
+--- получить длину строки
+взять пустой массив
+для каждого символа строки запушить в него что-нибудь
+получить длину массива
+
+--- преобразовать число в строку
+`${Num}`
+--- преобразовать строку в число
+Str extends `${infer Num extends number}` ? Num : never
+--- получить literal число
+собрать массив нужной длины и вернуть длину
+преобразовать строку с числом в число
+иначе никак
+
+--- проверка на равенство
+[T1 & T2] extends [never] ? <T1 !== T2> : <T1 === T2>
+
+--- сравнение символов на больше/меньше
+'0123456789' extends `${string}${S1}${string}${S2}${string}`
+    ? <S1 < S2>
+    : <S1 >= S2>
+
+=== UTILITY ALIASES
+
+- PromiseLike<T>
+объект содержащий интерфейс промиса и резолв в T
+- Array<T>
+Array<T> === (T)[]
+- PropertyKey
+PropertyKey === string | number | symbol
+
+=== UTILITY TYPES
+
+- Awaited<P>
+Если P - union, для каждого подтипа p вызывает Awaited<p>
+и возвращает union результатов
+Если P - промис, который резолвится в промис T, то возвращает Awaited<T>
+Если P - промис, который резолвится в T, то возвращает T
+Иначе возвращает P
+
+- Partial
+- Required<T>
+все ключи помечаются как обязательные
+- Readonly
+- Record<K, T>
+Пара ключ - значение
+ключ должен быть типа PropertyKey
+
+- Pick<T, K>
+Оставляет в объекте T ключи, являющиеся подмножеством K
+- Omit
+- Exclude<T, U>
+Выдергивает из union T все примитивы, содержащиеся в union U
+- Extract
+
+- NonNullable
+- Parameters<Fn>
+массив параметров функции
+- ConstructorParameters
+
+- ReturnType
+- InstanceType
+
+- ThisParameter
+- OmitThisParameter
+- ThisType
+
+- Uppercase
+- Lowercase
+- Capitalize
+- Uncapitalize
+
+=== UNLEARNED
+[k in Exclude<keyof (O & O1), keyof (O | O1)>]: (O & O1)[k]
+S extends `${Whitespace}${infer U}`| `${infer U}${Whitespace}`
+<T extends any> if T = never
+any vs unknown
+Equal<>
